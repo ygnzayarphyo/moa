@@ -1,6 +1,7 @@
 package moa.classifiers.meta;
 
 import com.github.javacliparser.IntOption;
+import com.yahoo.labs.samoa.instances.Instance;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
 import moa.classifiers.MultiClassClassifier;
@@ -8,7 +9,6 @@ import moa.classifiers.core.driftdetection.ADWIN;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.core.MiscUtils;
-import com.yahoo.labs.samoa.instances.Instance;
 import moa.options.ClassOption;
 
 import java.util.ArrayList;
@@ -23,12 +23,18 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     protected List<Classifier> ensemble;
     protected double[] predictivePerformances;
     protected ADWIN adwin;
+
     public ClassOption baseLearnerOption = new ClassOption("baseLearner", 'l',
             "Classifier to train.", Classifier.class, "trees.HoeffdingTree");
+
+    public IntOption windowSizeOption = new IntOption("windowSize", 'w',
+            "The length of the window (l).", 1000, 1, Integer.MAX_VALUE);
+
     public IntOption ensembleSizeOption = new IntOption("ensembleSize", 's',
-            "The number of learners in the ensemble.", 10, 1, Integer.MAX_VALUE);
+            "The number of learners in the ensemble (S).", 10, 1, Integer.MAX_VALUE);
     public IntOption seedOption = new IntOption("seed", 'r',
-            "Seed for the random number generator.", 1);
+            "Seed for the random number generator (seed).", 1);
+
     protected Random classifierRandom;
 
     public ZayarEnsemble() {
@@ -36,6 +42,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         this.predictivePerformances = new double[ensembleSizeOption.getValue()]; // Set size based on ensemble size option
         this.adwin = new ADWIN();
         this.classifierRandom = new Random(seedOption.getValue());
+        this.adwin.setW(getWindowSize());
     }
 
     @Override
@@ -44,6 +51,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         this.predictivePerformances = new double[ensembleSizeOption.getValue()]; // Reset size based on ensemble size option
         this.adwin = new ADWIN();
         this.classifierRandom = new Random(seedOption.getValue());
+        this.adwin.setW(getWindowSize());
     }
 
     @Override
@@ -160,7 +168,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     }
 
     protected int getWindowSize() {
-        return ensembleSizeOption.getValue();
+        return windowSizeOption.getValue();
     }
 
     protected double getWeightSeenByModel() {
