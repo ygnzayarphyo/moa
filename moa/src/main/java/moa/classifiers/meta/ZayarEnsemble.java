@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+@SuppressWarnings("DuplicatedCode")
 public class ZayarEnsemble extends AbstractClassifier implements MultiClassClassifier {
 
     private static final long serialVersionUID = 1L;
@@ -47,34 +48,47 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     @Override
     public void trainOnInstanceImpl(Instance instance) {
-        for (int i = 0; i < this.ensemble.size(); i++) {
-            Classifier model = this.ensemble.get(i);
-            double[] votes = model.getVotesForInstance(instance);
-            double predictedClass = getPredictedClass(votes);
-            double trueClass = instance.classValue();
-            double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
-            this.predictivePerformances[i] = (this.predictivePerformances[i] * model.trainingWeightSeenByModel() + accuracy) /
-                    (model.trainingWeightSeenByModel() + 1);
-            model.trainOnInstance(instance);
-        }
+        // Create candidate model
+        Classifier candidateModel = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
+        candidateModel.resetLearning();
 
-        if (getWeightSeenByModel() % getWindowSize() == 0) {
-            Classifier candidateModel = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
-            candidateModel.resetLearning();
-            candidateModel.trainOnInstance(instance);
-            double candidatePerformance = measurePredictivePerformance(instance, candidateModel);
-
-            if (candidatePerformance > this.adwin.getEstimation()) {
-                int leastAccurateModelIndex = findLeastAccurateModel();
-                if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
-                    this.ensemble.set(leastAccurateModelIndex, candidateModel);
-                    this.predictivePerformances[leastAccurateModelIndex] = candidatePerformance;
-                }
+        if (this.ensemble.isEmpty()) {
+            // If ensemble is empty, add candidate model directly
+            this.ensemble.add(candidateModel);
+            this.predictivePerformances = new double[]{measurePredictivePerformance(instance, candidateModel)};
+        } else {
+            for (int i = 0; i < this.ensemble.size(); i++) {
+                Classifier model = this.ensemble.get(i);
+                double[] votes = model.getVotesForInstance(instance);
+                double predictedClass = getPredictedClass(votes);
+                double trueClass = instance.classValue();
+                double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
+                this.predictivePerformances[i] = (this.predictivePerformances[i] * model.trainingWeightSeenByModel() + accuracy) /
+                        (model.trainingWeightSeenByModel() + 1);
+                model.trainOnInstance(instance);
             }
 
-            this.adwin.setInput(candidatePerformance);
-            if (this.adwin.getChange()) {
-                this.adwin = new ADWIN();
+            if (getWeightSeenByModel() % getWindowSize() == 0) {
+                // Update candidate model's predictive performance
+                double candidatePerformance = measurePredictivePerformance(instance, candidateModel);
+
+                if (candidatePerformance > this.adwin.getEstimation()) {
+                    int leastAccurateModelIndex = findLeastAccurateModel();
+                    if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
+                        // REPLACE t by c
+                        this.ensemble.set(leastAccurateModelIndex, candidateModel);
+                        this.predictivePerformances[leastAccurateModelIndex] = candidatePerformance;
+                    } else {
+                        // IGNORE c
+                    }
+                } else {
+                    // IGNORE c
+                }
+
+                this.adwin.setInput(candidatePerformance);
+                if (this.adwin.getChange()) {
+                    this.adwin = new ADWIN();
+                }
             }
         }
     }
@@ -129,7 +143,10 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     @Override
     public String getPurposeString() {
-        return "ZayarEnsemble is an ensemble classifier that combines the predictions of multiple base classifiers. It uses an incremental on-line bagging approach to dynamically update the ensemble based on the performance of individual models. The ensemble size and base learner can be configured to suit the problem at hand. ZayarEnsemble aims to provide accurate and robust predictions for multi-class classification tasks.";
+        return "ZayarEnsemble is an ensemble classifier that combines the predictions of multiple base classifiers. " +
+                "It uses an incremental on-line bagging approach to dynamically update the ensemble based on the performance of individual models. " +
+                "The ensemble size and base learner can be configured to suit the problem at hand. " +
+                "ZayarEnsemble aims to provide accurate and robust predictions for multi-class classification tasks.";
     }
 
     @Override
