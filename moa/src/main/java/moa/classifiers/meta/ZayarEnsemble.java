@@ -22,13 +22,12 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     protected List<Classifier> ensemble;
     protected double[] predictivePerformances;
-    protected ADWIN adwin;
 
     public ClassOption baseLearnerOption = new ClassOption("baseLearner", 'l',
             "Classifier to train.", Classifier.class, "trees.HoeffdingTree");
 
     public IntOption windowSizeOption = new IntOption("windowSize", 'w',
-            "The length of the window (l).", 1000, 1, Integer.MAX_VALUE);
+            "The length of the window (w).", 1000, 1, Integer.MAX_VALUE);
 
     public IntOption ensembleSizeOption = new IntOption("ensembleSize", 's',
             "The number of learners in the ensemble (S).", 10, 1, Integer.MAX_VALUE);
@@ -40,18 +39,14 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     public ZayarEnsemble() {
         this.ensemble = new ArrayList<>();
         this.predictivePerformances = new double[ensembleSizeOption.getValue()]; // Set size based on ensemble size option
-        this.adwin = new ADWIN();
         this.classifierRandom = new Random(seedOption.getValue());
-        this.adwin.setW(getWindowSize());
     }
 
     @Override
     public void resetLearningImpl() {
         this.ensemble.clear();
         this.predictivePerformances = new double[ensembleSizeOption.getValue()]; // Reset size based on ensemble size option
-        this.adwin = new ADWIN();
         this.classifierRandom = new Random(seedOption.getValue());
-        this.adwin.setW(getWindowSize());
     }
 
     @Override
@@ -80,26 +75,18 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
                 // Update candidate model's predictive performance
                 double candidatePerformance = measurePredictivePerformance(instance, candidateModel);
 
-                if (candidatePerformance > this.adwin.getEstimation()) {
-                    int leastAccurateModelIndex = findLeastAccurateModel();
-                    if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
-                        // REPLACE t by c
-                        this.ensemble.set(leastAccurateModelIndex, candidateModel);
-                        this.predictivePerformances[leastAccurateModelIndex] = candidatePerformance;
-                    } else {
-                        // IGNORE c
-                    }
+                int leastAccurateModelIndex = findLeastAccurateModel();
+                if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
+                    // REPLACE t by c
+                    this.ensemble.set(leastAccurateModelIndex, candidateModel);
+                    this.predictivePerformances[leastAccurateModelIndex] = candidatePerformance;
                 } else {
                     // IGNORE c
-                }
-
-                this.adwin.setInput(candidatePerformance);
-                if (this.adwin.getChange()) {
-                    this.adwin = new ADWIN();
                 }
             }
         }
     }
+
 
     private double measurePredictivePerformance(Instance instance, Classifier model) {
         double[] votes = model.getVotesForInstance(instance);
