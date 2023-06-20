@@ -5,7 +5,6 @@ import com.yahoo.labs.samoa.instances.Instance;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
 import moa.classifiers.MultiClassClassifier;
-import moa.classifiers.core.driftdetection.ADWIN;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.core.MiscUtils;
@@ -35,6 +34,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
             "Seed for the random number generator (seed).", 1);
 
     protected Random classifierRandom;
+    protected Classifier candidateModel;
 
     public ZayarEnsemble() {
         this.ensemble = new ArrayList<>();
@@ -51,14 +51,16 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     @Override
     public void trainOnInstanceImpl(Instance instance) {
-        // Create candidate model
-        Classifier candidateModel = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
-        candidateModel.resetLearning();
+        if (getWeightSeenByModel() % getWindowSize() == 0) {
+            // Create candidate model
+            this.candidateModel = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
+            this.candidateModel.resetLearning();
+        }
 
         if (this.ensemble.isEmpty()) {
             // If ensemble is empty, add candidate model directly
-            this.ensemble.add(candidateModel);
-            this.predictivePerformances = new double[]{measurePredictivePerformance(instance, candidateModel)};
+            this.ensemble.add(this.candidateModel);
+            this.predictivePerformances = new double[]{measurePredictivePerformance(instance, this.candidateModel)};
         } else {
             for (int i = 0; i < this.ensemble.size(); i++) {
                 Classifier model = this.ensemble.get(i);
@@ -73,12 +75,12 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
             if (getWeightSeenByModel() % getWindowSize() == 0) {
                 // Update candidate model's predictive performance
-                double candidatePerformance = measurePredictivePerformance(instance, candidateModel);
+                double candidatePerformance = measurePredictivePerformance(instance, this.candidateModel);
 
                 int leastAccurateModelIndex = findLeastAccurateModel();
                 if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
                     // REPLACE t by c
-                    this.ensemble.set(leastAccurateModelIndex, candidateModel);
+                    this.ensemble.set(leastAccurateModelIndex, this.candidateModel);
                     this.predictivePerformances[leastAccurateModelIndex] = candidatePerformance;
                 } else {
                     // IGNORE c
