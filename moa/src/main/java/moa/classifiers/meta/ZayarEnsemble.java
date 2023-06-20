@@ -38,15 +38,15 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     public ZayarEnsemble() {
         this.ensemble = new ArrayList<>();
-        this.predictivePerformances = new double[ensembleSizeOption.getValue()]; // Set size based on ensemble size option
-        this.classifierRandom = new Random(seedOption.getValue());
+        this.predictivePerformances = new double[getEnsembleSize()]; // Set size based on ensemble size option
+        this.classifierRandom = new Random(getSeed());
     }
 
     @Override
     public void resetLearningImpl() {
         this.ensemble.clear();
-        this.predictivePerformances = new double[ensembleSizeOption.getValue()]; // Reset size based on ensemble size option
-        this.classifierRandom = new Random(seedOption.getValue());
+        this.predictivePerformances = new double[getEnsembleSize()]; // Reset size based on ensemble size option
+        this.classifierRandom = new Random(getSeed());
     }
 
     @Override
@@ -158,6 +158,14 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     protected int getWindowSize() {
         return windowSizeOption.getValue();
+    }
+
+    protected int getEnsembleSize(){
+        return ensembleSizeOption.getValue();
+    }
+
+    protected int getSeed(){
+        return seedOption.getValue();
     }
 
     protected double getWeightSeenByModel() {
