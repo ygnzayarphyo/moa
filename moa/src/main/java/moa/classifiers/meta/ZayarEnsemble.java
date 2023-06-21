@@ -17,7 +17,6 @@ import java.util.Random;
 /**
  * @author Zayar Phyo (ygnzayarphyo@outlook.com)
  */
-@SuppressWarnings("DuplicatedCode")
 public class ZayarEnsemble extends AbstractClassifier implements MultiClassClassifier {
 
     private static final long serialVersionUID = 1L;
@@ -40,7 +39,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     protected Classifier candidateModel;
 
     /**
-     * Initialise variable in constructor
+     * Initialise variables in constructor
      */
     public ZayarEnsemble() {
         this.ensemble = new ArrayList<>();
@@ -93,7 +92,6 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
                         this.predictivePerformances[i] = basePerformance;
                     } else {
                         // IGNORE base learner
-
                     }
                 }
             }
@@ -101,7 +99,6 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
             if (getWeightSeenByModel() % getWindowSize() == 0) {
                 // Update candidate model's predictive performance
                 double candidatePerformance = measurePredictivePerformance(instance, this.candidateModel);
-
                 int leastAccurateModelIndex = findLeastAccurateModel();
                 if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
                     // REPLACE t by c
@@ -118,8 +115,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         double[] votes = model.getVotesForInstance(instance);
         double predictedClass = getPredictedClass(votes);
         double trueClass = instance.classValue();
-        double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
-        return accuracy;
+        return predictedClass == trueClass ? 1.0 : 0.0;
     }
 
     private int findLeastAccurateModel() {
@@ -135,8 +131,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     }
 
     private double getPredictedClass(double[] votes) {
-        int maxIndex = MiscUtils.maxIndex(votes);
-        return (double) maxIndex;
+        return MiscUtils.maxIndex(votes);
     }
 
     @Override
@@ -145,8 +140,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         for (Classifier model : this.ensemble) {
             double[] modelVotes = model.getVotesForInstance(instance);
             double modelPerformance = model.trainingWeightSeenByModel() > 0 ? this.predictivePerformances[this.ensemble.indexOf(model)] : 0.0;
-            double weight = modelPerformance;
-            addWeightedValues(combinedVote, modelVotes, weight);
+            addWeightedValues(combinedVote, modelVotes, modelPerformance);
         }
         return combinedVote.getArrayRef();
     }
@@ -177,7 +171,20 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     @Override
     public void getModelDescription(StringBuilder out, int indent) {
-
+        String indentStr = "";
+        for (int i = 0; i < indent; i++) {
+            indentStr += "  ";
+        }
+        out.append(indentStr).append("ZayarEnsemble Classifier\n");
+        out.append(indentStr).append("------------------------------\n");
+        out.append(indentStr).append("ZayarEnsemble is an ensemble classifier that combines the predictions of multiple base classifiers. It utilizes an incremental on-line bagging approach to dynamically update the ensemble based on the performance of individual models.\n");
+        out.append(indentStr).append("Key Features:\n");
+        out.append(indentStr).append("  - Customizable ensemble size (default: 10)\n");
+        out.append(indentStr).append("  - Configurable base learner (default: trees.HoeffdingTree)\n");
+        out.append(indentStr).append("  - Variable window size (default: 1000)\n");
+        out.append(indentStr).append("  - Random seed for the number generator (default: 1)\n");
+        out.append(indentStr).append("Purpose:\n");
+        out.append(indentStr).append("ZayarEnsemble aims to provide accurate and robust predictions for multi-class classification tasks. By leveraging the strengths of multiple base classifiers, it enhances the predictive power and improves the overall performance of the classification process.\n");
     }
 
     protected int getWindowSize() {
