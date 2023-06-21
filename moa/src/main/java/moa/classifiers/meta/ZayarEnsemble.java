@@ -14,6 +14,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+/**
+ * @author Zayar Phyo (ygnzayarphyo@outlook.com)
+ */
 @SuppressWarnings("DuplicatedCode")
 public class ZayarEnsemble extends AbstractClassifier implements MultiClassClassifier {
 
@@ -36,6 +39,9 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     protected Random classifierRandom;
     protected Classifier candidateModel;
 
+    /**
+     * Initialise variable in constructor
+     */
     public ZayarEnsemble() {
         this.ensemble = new ArrayList<>();
         this.predictivePerformances = new double[getEnsembleSize()]; // Set size based on ensemble size option
@@ -69,14 +75,27 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
             this.predictivePerformances = new double[]{measurePredictivePerformance(instance, this.candidateModel)};
         } else {
             for (int i = 0; i < this.ensemble.size(); i++) {
-                Classifier model = this.ensemble.get(i);
-                double[] votes = model.getVotesForInstance(instance);
-                double predictedClass = getPredictedClass(votes);
-                double trueClass = instance.classValue();
-                double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
-                this.predictivePerformances[i] = (this.predictivePerformances[i] * model.trainingWeightSeenByModel() + accuracy) /
-                        (model.trainingWeightSeenByModel() + 1);
-                model.trainOnInstance(instance);
+                int k = MiscUtils.poisson(1.0, this.classifierRandom);
+                if (k > 0) {
+                    Classifier model = this.ensemble.get(i);
+                    double[] votes = model.getVotesForInstance(instance);
+                    double predictedClass = getPredictedClass(votes);
+                    double trueClass = instance.classValue();
+                    double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
+                    this.predictivePerformances[i] = (this.predictivePerformances[i] * model.trainingWeightSeenByModel() + accuracy) /
+                            (model.trainingWeightSeenByModel() + 1);
+                    model.trainOnInstance(instance);
+                    // Compare against performance of base learners
+                    double basePerformance = measurePredictivePerformance(instance, model);
+                    if (basePerformance > this.predictivePerformances[i]) {
+                        // REPLACE t by base learner
+                        this.ensemble.set(i, model.copy());
+                        this.predictivePerformances[i] = basePerformance;
+                    } else {
+                        // IGNORE base learner
+
+                    }
+                }
             }
 
             if (getWeightSeenByModel() % getWindowSize() == 0) {
@@ -92,23 +111,8 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
                     // IGNORE c
                 }
             }
-
-            // Compare against performance of base learners
-            for (int i = 0; i < this.ensemble.size(); i++) {
-                Classifier model = this.ensemble.get(i);
-                double basePerformance = measurePredictivePerformance(instance, model);
-                if (basePerformance > this.predictivePerformances[i]) {
-                    // REPLACE t by base learner
-                    this.ensemble.set(i, model.copy());
-                    this.predictivePerformances[i] = basePerformance;
-                } else {
-                    // IGNORE base learner
-                }
-            }
         }
     }
-
-
 
     private double measurePredictivePerformance(Instance instance, Classifier model) {
         double[] votes = model.getVotesForInstance(instance);
@@ -155,7 +159,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     @Override
     public boolean isRandomizable() {
-        return false;
+        return true;
     }
 
     @Override
