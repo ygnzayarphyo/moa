@@ -45,6 +45,11 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     @Override
     public void resetLearningImpl() {
         this.ensemble.clear();
+        // Initialize the ensemble with the specified size
+        for (int i = 0; i < getEnsembleSize(); i++) {
+            Classifier classifier = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
+            this.ensemble.add(classifier);
+        }
         this.predictivePerformances = new double[getEnsembleSize()]; // Reset size based on ensemble size option
         this.classifierRandom = new Random(getSeed());
     }
@@ -55,6 +60,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
             // Create candidate model
             this.candidateModel = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
             this.candidateModel.resetLearning();
+            this.candidateModel.setRandomSeed(getSeed());
         }
 
         if (this.ensemble.isEmpty()) {
@@ -86,8 +92,22 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
                     // IGNORE c
                 }
             }
+
+            // Compare against performance of base learners
+            for (int i = 0; i < this.ensemble.size(); i++) {
+                Classifier model = this.ensemble.get(i);
+                double basePerformance = measurePredictivePerformance(instance, model);
+                if (basePerformance > this.predictivePerformances[i]) {
+                    // REPLACE t by base learner
+                    this.ensemble.set(i, model.copy());
+                    this.predictivePerformances[i] = basePerformance;
+                } else {
+                    // IGNORE base learner
+                }
+            }
         }
     }
+
 
 
     private double measurePredictivePerformance(Instance instance, Classifier model) {
