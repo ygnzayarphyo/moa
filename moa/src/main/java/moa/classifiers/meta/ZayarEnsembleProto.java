@@ -5,6 +5,7 @@ import com.yahoo.labs.samoa.instances.Instance;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
 import moa.classifiers.MultiClassClassifier;
+import moa.classifiers.trees.HoeffdingTree;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.core.MiscUtils;
@@ -52,6 +53,21 @@ public class ZayarEnsembleProto extends AbstractClassifier implements MultiClass
         this.ensemble.clear();
         for (int i = 0; i < getEnsembleSize(); i++) {
             Classifier classifier = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
+
+            // Set hyperparameters for base learner
+            if (classifier instanceof HoeffdingTree) {
+                HoeffdingTree ht = (HoeffdingTree) classifier;
+
+                // Set random hyperparameters for base learner
+                int gracePeriod = getRandomValue(10, 200, 10);
+                double splitConfidence = getRandomValue(0.0, 1.0, 0.05);
+                double tieThreshold = getRandomValue(0.0, 1.0, 0.05);
+
+                ht.gracePeriodOption.setValue(gracePeriod);
+                ht.splitConfidenceOption.setValue(splitConfidence);
+                ht.tieThresholdOption.setValue(tieThreshold);
+            }
+
             this.ensemble.add(classifier);
         }
         this.predictivePerformances = new double[getEnsembleSize()]; // Reset size based on ensemble size option
@@ -205,4 +221,17 @@ public class ZayarEnsembleProto extends AbstractClassifier implements MultiClass
         }
         return weight;
     }
+
+    private int getRandomValue(int minValue, int maxValue, int step) {
+        int range = (maxValue - minValue) / step + 1;
+        int randomIndex = classifierRandom.nextInt(range);
+        return minValue + randomIndex * step;
+    }
+
+    private double getRandomValue(double minValue, double maxValue, double step) {
+        int range = (int) ((maxValue - minValue) / step) + 1;
+        int randomIndex = classifierRandom.nextInt(range);
+        return minValue + randomIndex * step;
+    }
+
 }
