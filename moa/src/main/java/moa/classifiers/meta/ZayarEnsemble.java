@@ -14,13 +14,17 @@ import moa.options.ClassOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-
+/**
+ * @author Zayar Phyo (ygnzayarphyo@outlook.com)
+ */
 public class ZayarEnsemble extends AbstractClassifier implements MultiClassClassifier {
 
     private static final long serialVersionUID = 1L;
 
     protected List<Classifier> ensemble;
     protected double[] predictivePerformances;
+    protected double accumulatedNumCorrectPredictions;
+    protected int accumulatedNumInstances;
 
     public ClassOption baseLearnerOption = new ClassOption("baseLearner", 'l',
             "Classifier to train.", Classifier.class, "trees.HoeffdingTree");
@@ -36,19 +40,12 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     protected Random classifierRandom;
     protected Classifier candidateModel;
 
-    // Accumulated performance variables
-    protected int numInstances;
-    protected int numCorrectPredictions;
-
-    /**
-     * Initialise variables in constructor
-     */
     public ZayarEnsemble() {
         this.ensemble = new ArrayList<>();
-        this.predictivePerformances = new double[getEnsembleSize()]; // Set size based on ensemble size option
+        this.predictivePerformances = new double[getEnsembleSize()];
         this.classifierRandom = new Random(getSeed());
-        this.numInstances = 0;
-        this.numCorrectPredictions = 0;
+        this.accumulatedNumCorrectPredictions = 0.0;
+        this.accumulatedNumInstances = 0;
     }
 
     @Override
@@ -56,7 +53,6 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         this.ensemble.clear();
         for (int i = 0; i < getEnsembleSize(); i++) {
             Classifier classifier = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
-
             // Set hyperparameters for base learner
             if (classifier instanceof HoeffdingTree) {
                 HoeffdingTree ht = (HoeffdingTree) classifier;
@@ -69,14 +65,15 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
                 ht.gracePeriodOption.setValue(gracePeriod);
                 ht.splitConfidenceOption.setValue(splitConfidence);
                 ht.tieThresholdOption.setValue(tieThreshold);
+                this.ensemble.add(ht);
+            } else {
+                this.ensemble.add(classifier);
             }
-
-            this.ensemble.add(classifier);
         }
-        this.predictivePerformances = new double[getEnsembleSize()]; // Reset size based on ensemble size option
+        this.predictivePerformances = new double[getEnsembleSize()];
         this.classifierRandom = new Random(getSeed());
-        this.numInstances = 0;
-        this.numCorrectPredictions = 0;
+        this.accumulatedNumCorrectPredictions = 0.0;
+        this.accumulatedNumInstances = 0;
     }
 
     @Override
@@ -89,7 +86,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
         if (this.ensemble.isEmpty()) {
             this.ensemble.add(this.candidateModel);
-            this.predictivePerformances = new double[]{measurePredictivePerformance(instance)};
+            this.predictivePerformances = new double[]{measurePredictivePerformance(instance, this.candidateModel)};
         } else {
             for (int i = 0; i < this.ensemble.size(); i++) {
                 int k = MiscUtils.poisson(1.0, this.classifierRandom);
@@ -99,41 +96,33 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
                     double predictedClass = getPredictedClass(votes);
                     double trueClass = instance.classValue();
                     double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
-                    this.numCorrectPredictions += accuracy;
-                    this.numInstances++;
-                    this.predictivePerformances[i] = (double) this.numCorrectPredictions / this.numInstances;
-                    model.trainOnInstance(instance);
-                    double basePerformance = measurePredictivePerformance(instance);
+                    this.accumulatedNumCorrectPredictions += accuracy;
+                    this.accumulatedNumInstances++;
+                    double basePerformance = this.accumulatedNumCorrectPredictions / this.accumulatedNumInstances;
                     if (basePerformance > this.predictivePerformances[i]) {
                         this.ensemble.set(i, model.copy());
                         this.predictivePerformances[i] = basePerformance;
-                    } else {
-                        // IGNORE base learner
                     }
+                    model.trainOnInstance(instance);
                 }
             }
 
             if (getWeightSeenByModel() % getWindowSize() == 0) {
-                double candidatePerformance = measurePredictivePerformance(instance);
+                double candidatePerformance = measurePredictivePerformance(instance, this.candidateModel);
                 int leastAccurateModelIndex = findLeastAccurateModel();
                 if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
                     this.ensemble.set(leastAccurateModelIndex, this.candidateModel);
                     this.predictivePerformances[leastAccurateModelIndex] = candidatePerformance;
-                } else {
-                    // IGNORE c
                 }
             }
         }
     }
 
-    private double measurePredictivePerformance(Instance instance) {
-        double[] votes = getVotesForInstance(instance);
+    private double measurePredictivePerformance(Instance instance, Classifier model) {
+        double[] votes = model.getVotesForInstance(instance);
         double predictedClass = getPredictedClass(votes);
         double trueClass = instance.classValue();
-        double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
-        this.numCorrectPredictions += accuracy;
-        this.numInstances++;
-        return (double) this.numCorrectPredictions / this.numInstances;
+        return predictedClass == trueClass ? 1.0 : 0.0;
     }
 
     private int findLeastAccurateModel() {
@@ -157,7 +146,7 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         DoubleVector combinedVote = new DoubleVector();
         for (Classifier model : this.ensemble) {
             double[] modelVotes = model.getVotesForInstance(instance);
-            double modelPerformance = model.trainingWeightSeenByModel() > 0 ? this.predictivePerformances[this.ensemble.indexOf(model)] : 0.0;
+            double modelPerformance = this.predictivePerformances[this.ensemble.indexOf(model)];
             addWeightedValues(combinedVote, modelVotes, modelPerformance);
         }
         return combinedVote.getArrayRef();
@@ -209,11 +198,11 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         return windowSizeOption.getValue();
     }
 
-    protected int getEnsembleSize() {
+    protected int getEnsembleSize(){
         return ensembleSizeOption.getValue();
     }
 
-    protected int getSeed() {
+    protected int getSeed(){
         return seedOption.getValue();
     }
 
@@ -227,14 +216,13 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
 
     private int getRandomValue(int minValue, int maxValue, int step) {
         int range = (maxValue - minValue) / step + 1;
-        int randomIndex = classifierRandom.nextInt(range);
+        int randomIndex = this.classifierRandom.nextInt(range);
         return minValue + randomIndex * step;
     }
 
     private double getRandomValue(double minValue, double maxValue, double step) {
         int range = (int) ((maxValue - minValue) / step) + 1;
-        int randomIndex = classifierRandom.nextInt(range);
+        int randomIndex = this.classifierRandom.nextInt(range);
         return minValue + randomIndex * step;
     }
-
 }
