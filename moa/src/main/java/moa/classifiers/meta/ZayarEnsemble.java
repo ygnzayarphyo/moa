@@ -5,6 +5,7 @@ import com.yahoo.labs.samoa.instances.Instance;
 import moa.classifiers.AbstractClassifier;
 import moa.classifiers.Classifier;
 import moa.classifiers.MultiClassClassifier;
+import moa.classifiers.trees.HoeffdingTree;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.core.MiscUtils;
@@ -14,9 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * @author Zayar Phyo (ygnzayarphyo@outlook.com)
- */
 public class ZayarEnsemble extends AbstractClassifier implements MultiClassClassifier {
 
     private static final long serialVersionUID = 1L;
@@ -33,10 +31,14 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
     public IntOption ensembleSizeOption = new IntOption("ensembleSize", 's',
             "The number of learners in the ensemble (S).", 10, 1, Integer.MAX_VALUE);
     public IntOption seedOption = new IntOption("seed", 'r',
-            "Seed for the random number generator (seed).", 1);
+            "Seed for the random number generator (seed).", 1, 1, Integer.MAX_VALUE);
 
     protected Random classifierRandom;
     protected Classifier candidateModel;
+
+    // Accumulated performance variables
+    protected int numInstances;
+    protected int numCorrectPredictions;
 
     /**
      * Initialise variables in constructor
@@ -45,33 +47,49 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         this.ensemble = new ArrayList<>();
         this.predictivePerformances = new double[getEnsembleSize()]; // Set size based on ensemble size option
         this.classifierRandom = new Random(getSeed());
+        this.numInstances = 0;
+        this.numCorrectPredictions = 0;
     }
 
     @Override
     public void resetLearningImpl() {
         this.ensemble.clear();
-        // Initialize the ensemble with the specified size
         for (int i = 0; i < getEnsembleSize(); i++) {
             Classifier classifier = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
+
+            // Set hyperparameters for base learner
+            if (classifier instanceof HoeffdingTree) {
+                HoeffdingTree ht = (HoeffdingTree) classifier;
+
+                // Set random hyperparameters for base learner
+                int gracePeriod = getRandomValue(10, 200, 10);
+                double splitConfidence = getRandomValue(0.0, 1.0, 0.05);
+                double tieThreshold = getRandomValue(0.0, 1.0, 0.05);
+
+                ht.gracePeriodOption.setValue(gracePeriod);
+                ht.splitConfidenceOption.setValue(splitConfidence);
+                ht.tieThresholdOption.setValue(tieThreshold);
+            }
+
             this.ensemble.add(classifier);
         }
         this.predictivePerformances = new double[getEnsembleSize()]; // Reset size based on ensemble size option
         this.classifierRandom = new Random(getSeed());
+        this.numInstances = 0;
+        this.numCorrectPredictions = 0;
     }
 
     @Override
     public void trainOnInstanceImpl(Instance instance) {
         if (getWeightSeenByModel() % getWindowSize() == 0) {
-            // Create candidate model
             this.candidateModel = ((Classifier) getPreparedClassOption(baseLearnerOption)).copy();
             this.candidateModel.resetLearning();
             this.candidateModel.setRandomSeed(getSeed());
         }
 
         if (this.ensemble.isEmpty()) {
-            // If ensemble is empty, add candidate model directly
             this.ensemble.add(this.candidateModel);
-            this.predictivePerformances = new double[]{measurePredictivePerformance(instance, this.candidateModel)};
+            this.predictivePerformances = new double[]{measurePredictivePerformance(instance)};
         } else {
             for (int i = 0; i < this.ensemble.size(); i++) {
                 int k = MiscUtils.poisson(1.0, this.classifierRandom);
@@ -81,13 +99,12 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
                     double predictedClass = getPredictedClass(votes);
                     double trueClass = instance.classValue();
                     double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
-                    this.predictivePerformances[i] = (this.predictivePerformances[i] * model.trainingWeightSeenByModel() + accuracy) /
-                            (model.trainingWeightSeenByModel() + 1);
+                    this.numCorrectPredictions += accuracy;
+                    this.numInstances++;
+                    this.predictivePerformances[i] = (double) this.numCorrectPredictions / this.numInstances;
                     model.trainOnInstance(instance);
-                    // Compare against performance of base learners
-                    double basePerformance = measurePredictivePerformance(instance, model);
+                    double basePerformance = measurePredictivePerformance(instance);
                     if (basePerformance > this.predictivePerformances[i]) {
-                        // REPLACE t by base learner
                         this.ensemble.set(i, model.copy());
                         this.predictivePerformances[i] = basePerformance;
                     } else {
@@ -97,11 +114,9 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
             }
 
             if (getWeightSeenByModel() % getWindowSize() == 0) {
-                // Update candidate model's predictive performance
-                double candidatePerformance = measurePredictivePerformance(instance, this.candidateModel);
+                double candidatePerformance = measurePredictivePerformance(instance);
                 int leastAccurateModelIndex = findLeastAccurateModel();
                 if (candidatePerformance > this.predictivePerformances[leastAccurateModelIndex]) {
-                    // REPLACE t by c
                     this.ensemble.set(leastAccurateModelIndex, this.candidateModel);
                     this.predictivePerformances[leastAccurateModelIndex] = candidatePerformance;
                 } else {
@@ -111,11 +126,14 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         }
     }
 
-    private double measurePredictivePerformance(Instance instance, Classifier model) {
-        double[] votes = model.getVotesForInstance(instance);
+    private double measurePredictivePerformance(Instance instance) {
+        double[] votes = getVotesForInstance(instance);
         double predictedClass = getPredictedClass(votes);
         double trueClass = instance.classValue();
-        return predictedClass == trueClass ? 1.0 : 0.0;
+        double accuracy = predictedClass == trueClass ? 1.0 : 0.0;
+        this.numCorrectPredictions += accuracy;
+        this.numInstances++;
+        return (double) this.numCorrectPredictions / this.numInstances;
     }
 
     private int findLeastAccurateModel() {
@@ -191,11 +209,11 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         return windowSizeOption.getValue();
     }
 
-    protected int getEnsembleSize(){
+    protected int getEnsembleSize() {
         return ensembleSizeOption.getValue();
     }
 
-    protected int getSeed(){
+    protected int getSeed() {
         return seedOption.getValue();
     }
 
@@ -206,4 +224,17 @@ public class ZayarEnsemble extends AbstractClassifier implements MultiClassClass
         }
         return weight;
     }
+
+    private int getRandomValue(int minValue, int maxValue, int step) {
+        int range = (maxValue - minValue) / step + 1;
+        int randomIndex = classifierRandom.nextInt(range);
+        return minValue + randomIndex * step;
+    }
+
+    private double getRandomValue(double minValue, double maxValue, double step) {
+        int range = (int) ((maxValue - minValue) / step) + 1;
+        int randomIndex = classifierRandom.nextInt(range);
+        return minValue + randomIndex * step;
+    }
+
 }
